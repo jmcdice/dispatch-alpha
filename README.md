@@ -122,7 +122,7 @@ This is what my setup looks like:
 
 1. Clone the Repository
    ```bash
-   git clone https://github.com/yourusername/dispatch-alpha.git
+   git clone https://github.com/jmcdice/dispatch-alpha.git
    cd dispatch-alpha
    ```
 
@@ -133,13 +133,10 @@ This is what my setup looks like:
    sudo apt-get upgrade
    ```
 
-3. Install Dependencies
-   Install required system packages:
+3.  Install Python libraries:
    ```bash
-   sudo apt-get install python3-pip python3-numpy python3-sounddevice python3-soundfile
-   ```
-   Install Python libraries:
-   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
    pip3 install -r requirements.txt
    ```
 
@@ -148,17 +145,20 @@ This is what my setup looks like:
    ```bash
    python3 -c "import sounddevice as sd; print(sd.query_devices())"
    ```
-   Identify the indexes of your input and output audio devices and update `AUDIO_DEVICE_INDEX` in both `rx-stable.py` and `tx-stable.py` accordingly.
+   Identify the indexes of your input and output audio devices and update config/settings.py:
+   ```bash
+
+   AUDIO_DEVICE_INDEX = 2  # This is for RX
+   TX_AUDIO_DEVICE_INDEX = 1  # This is for TX
+   AUDIO_DEVICE = "plughw:1,0"  # ALSA name for the onboard headphone jack
+   ```
 
 5. Set Up OpenAI API Key
 
-Set your OpenAI API key as an environment variable:
-```bash
-   export OPENAI_API_KEY='your_actual_api_key_here'
-```
-Consider adding this line to your `~/.bashrc` or `~/.bash_profile` for persistence.
-
-## Usage
+   Set your OpenAI API key as an environment variable:
+   ```bash
+      export OPENAI_API_KEY='your_actual_api_key_here'
+   ```
 
 ### Receiver (RX) Script
 
@@ -181,11 +181,15 @@ Functionality:
 
 ### Transmitter (TX) Script
 
+NOTES ON TX: 
+ - Configure VOX mode on the Baofeng. Sensitivity is set between 0 (off) and 10. With 1 being the most sensitive. Choose 1.
+ - Using `alsamixer` set the volume of the on-board headphone jack to 90+ to trigger the VOX.
+
 The `tx-stable.py` script monitors transcriptions, generates responses using OpenAI's ChatGPT, converts the responses to speech using OpenAI's TTS API, and plays the audio back through the TX Baofeng.
 
 Running the TX Script:
 ```bash
-python3 tx-stable.py
+bash scripts/run_transmitter.sh
 ```
 
 Command-Line Options:
