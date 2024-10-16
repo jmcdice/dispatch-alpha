@@ -135,7 +135,7 @@ def generate_response():
 
         for timestamp, transcription, filename in new_transcriptions:
             filepath = os.path.join(TRANSCRIPTIONS_DIR, filename)
-            logger.info(f"New transcription: {transcription}")
+            logger.info(f"New transcription: {transcription[:60]} ...")
 
             if should_respond(transcription):
                 logger.info("Transcription addresses the dispatcher. Generating response.")
@@ -174,7 +174,7 @@ You must always close your transmission with the current military time by saying
                         messages=messages
                     )
                     response_text = completion.choices[0].message.content.strip()
-                    logger.info(f"Generated response: {response_text}")
+                    logger.info(f"Generated response: {response_text[:60]} ...")
                     # Add assistant's response to conversation history
                     conversation_history.append({'timestamp': datetime.now(tz=timestamp.tzinfo), 'role': 'assistant', 'content': response_text})
                     # Enqueue the response for transmission
@@ -225,7 +225,9 @@ def play_audio(audio_file):
     """Play audio file using aplay with the specified device."""
     try:
         logger.info(f"Playing audio file: {audio_file} on device: {AUDIO_DEVICE}")
-        subprocess.run(['aplay', '-D', AUDIO_DEVICE, audio_file], check=True)
+        #subprocess.run(['aplay', '-D', AUDIO_DEVICE, audio_file], check=True)
+        subprocess.run(['aplay', '-D', AUDIO_DEVICE, audio_file], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
         logger.info("Audio playback completed.")
     except subprocess.CalledProcessError as e:
         logger.error(f"Error playing audio: {e}")
@@ -240,7 +242,7 @@ def transmit_responses():
         try:
             response_text = response_queue.get(timeout=1)
             if response_text:
-                logger.info(f"Transmitting response: {response_text}")
+                logger.debug(f"Transmitting response: {response_text}")
                 audio_file = text_to_speech(response_text)
                 if audio_file:
                     play_audio(audio_file)
