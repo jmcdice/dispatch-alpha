@@ -2,39 +2,17 @@
 
 Dispatch Alpha is an intelligent radio dispatch system that integrates Baofeng walkie-talkies with a Raspberry Pi and AI capabilities. Using OpenAI's Whisper API for transcription, ChatGPT for generating responses, and Text-to-Speech (TTS0-1) for audio output, the system can transcribe radio communications, analyze them, and respond to user inputs on the same radio channel.
 
-<video width="600" controls>
-  <source src="https://storage.googleapis.com/echo-004/dispatch-alpha-demo.mov" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
-
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Features](#features)
-- [Hardware Setup](#hardware-setup)
-  - [Components](#components)
-  - [Connections](#connections)
-- [Software Setup](#software-setup)
-  - [Requirements](#requirements)
-  - [Configuration](#configuration)
-  - [Installation](#installation)
-- [Usage](#usage)
-  - [Receiver (RX) Script](#receiver-rx-script)
-  - [Transmitter (TX) Script](#transmitter-tx-script)
-- [Future Development](#future-development)
-- [Contributing](#contributing)
-- [License](#license)
+[Watch the demo](https://storage.googleapis.com/echo-004/dispatch-alpha-demo.mov)
 
 ## Overview
 
 Dispatch Alpha aims add a dispatcher to any channel by introducing AI capabilities from OpenAI to traditional radio systems. Currently using two baofengs and a raspberry pi. You also need an additional baofeng for just listeing in. I'm using these and they're great: 
 
-[Baofeng Radios](https://www.amazon.com/dp/B0CW2QQGXD) $70
+[Baofeng Radios](https://www.amazon.com/dp/B0CW2QQGXD) $70 for two radios
 
 [USB Sound Card](https://www.amazon.com/dp/B00IRVQ0F8) $7
 
-[2.5mm to 3.5mm audio cable](https://www.amazon.com/Mr-Rex-Replacement-Compatible-Cancelling/dp/B07W6FD6MV/)
+[2.5mm to 3.5mm audio cable](https://www.amazon.com/Mr-Rex-Replacement-Compatible-Cancelling/dp/B07W6FD6MV/) $6
 
 - **Receiver (RX)**: Listens to the radio channel, captures incoming audio, and transcribes it using OpenAI's Whisper API.
 - **Transmitter (TX)**: Generates AI-based responses using OpenAI's ChatGPT and TTS APIs, and transmits them back over the radio channel.
