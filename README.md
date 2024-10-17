@@ -2,7 +2,7 @@
 
 Dispatch Alpha is an intelligent radio dispatch system that integrates Baofeng walkie-talkies with a Raspberry Pi and AI capabilities. Using OpenAI's Whisper API for transcription, ChatGPT for generating responses, and Text-to-Speech (TTS0-1) for audio output, the system can transcribe radio communications, analyze them, and respond to user inputs on the same radio channel.
 
-[Watch the demo](demo/dispatch-alpha-demo.mov)
+[Watch the demo video](https://storage.googleapis.com/echo-004/dispatch-alpha-demo.mov)
 
 ## Table of Contents
 
