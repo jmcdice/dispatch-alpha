@@ -16,6 +16,8 @@ import numpy as np
 import sounddevice as sd
 import soundfile as sf
 from openai import OpenAI  # Updated import
+from logging.handlers import WatchedFileHandler
+
 
 # Add the project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
@@ -37,18 +39,23 @@ from config.settings import (
     TRANSCRIPTIONS_DIR,
     AUDIO_DIR,
     LOG_FILE,
-    LOG_FORMAT
+    LOG_FORMAT,
+    TRANSCRIPTIONS_LOG_FILE
 )
+
 from src.common.utils import list_audio_devices, initialize_logging
 
 # Initialize Logging
 initialize_logging(LOG_FILE, LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
-# Create a specific logger for transcriptions
-transcription_logger = logging.getLogger('transcription_logger')
-transcription_handler = logging.FileHandler('logs/transcriptions.log')
-transcription_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+# Initialize Transcription Logger
+transcription_logger = logging.getLogger('transcriptions')
+transcription_logger.setLevel(logging.INFO)
+transcription_handler = WatchedFileHandler(TRANSCRIPTIONS_LOG_FILE)
+transcription_handler.setLevel(logging.INFO)
+transcription_formatter = logging.Formatter('%(asctime)s | %(processName)s | user | %(message)s')
+transcription_handler.setFormatter(transcription_formatter)
 transcription_logger.addHandler(transcription_handler)
 
 # Initialize OpenAI Client
@@ -119,7 +126,8 @@ def transcribe_audio(audio_data):
                 return
 
             # Log the transcription
-            transcription_logger.info(f"Transcription: {transcription_text}")
+            transcription_logger.info(f"{transcription_text}")
+
 
             # Save the transcription to a JSON file
             os.makedirs(TRANSCRIPTIONS_DIR, exist_ok=True)

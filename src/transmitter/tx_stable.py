@@ -6,6 +6,7 @@ import shutil
 import json
 import time
 import logging
+from logging.handlers import WatchedFileHandler
 import threading
 from datetime import datetime, timedelta
 import queue
@@ -36,7 +37,8 @@ from config.settings import (
     TX_LOG_FILE,
     LOG_FORMAT,
     TRANSCRIPTIONS_DIR,
-    PROCESSED_TRANSCRIPTIONS_DIR
+    PROCESSED_TRANSCRIPTIONS_DIR,
+    TRANSCRIPTIONS_LOG_FILE
 )
 from src.common.utils import initialize_logging, register_signal_handlers
 
@@ -45,6 +47,15 @@ from openai import OpenAI
 # Initialize Logging
 initialize_logging(TX_LOG_FILE, LOG_FORMAT)
 logger = logging.getLogger(__name__)
+
+# Initialize Transcription Logger
+transcription_logger = logging.getLogger('transcriptions')
+transcription_logger.setLevel(logging.INFO)
+transcription_handler = WatchedFileHandler(TRANSCRIPTIONS_LOG_FILE)
+transcription_handler.setLevel(logging.INFO)
+transcription_formatter = logging.Formatter('%(asctime)s | %(processName)s | assistant | %(message)s')
+transcription_handler.setFormatter(transcription_formatter)
+transcription_logger.addHandler(transcription_handler)
 
 # Initialize OpenAI Client
 if not API_KEY:
@@ -231,6 +242,7 @@ def generate_response():
             filepath = os.path.join(TRANSCRIPTIONS_DIR, filename)
             logger.info(f"New transcription: {transcription[:60]} ...")
 
+
             responding_persona = should_respond(transcription)
             if responding_persona:
                 logger.info(f"Transcription will be handled by persona '{responding_persona}'.")
@@ -264,6 +276,7 @@ def generate_response():
                     )
                     response_text = completion.choices[0].message.content.strip()
                     logger.info(f"Generated response: {response_text[:60]} ...")
+                    transcription_logger.info(f"{responding_persona} | {response_text}")
                     # Add assistant's response to conversation history
                     conversation_history.append({
                         'timestamp': datetime.now(tz=timestamp.tzinfo),

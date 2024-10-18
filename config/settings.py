@@ -62,3 +62,4 @@ TX_LOG_FILE = 'logs/dispatch_ai_tx.log'
 
 # Other Configurations
 TRANSCRIPTIONS_DIR = 'data/transcriptions'
+TRANSCRIPTIONS_LOG_FILE = 'logs/transcriptions.log'
