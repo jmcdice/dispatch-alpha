@@ -11,8 +11,8 @@ from datetime import datetime, timedelta
 import queue
 import argparse
 import warnings
-
 import subprocess
+import random  # Added for random persona selection
 
 # Ignore DeprecationWarning
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -28,7 +28,7 @@ from config.settings import (
     TX_AUDIO_DEVICE_INDEX,
     AUDIO_DEVICE,
     PROCESSED_FILES_JSON,
-    VOICE_NAME,
+    VOICE_NAME,  # Default voice, will be overridden per persona
     TTS_AUDIO_DIR,
     CONTEXT_EXPIRATION,
     RESPONSE_QUEUE_MAX_SIZE,
@@ -60,6 +60,26 @@ terminate_flag = threading.Event()
 response_queue = queue.Queue(maxsize=RESPONSE_QUEUE_MAX_SIZE)
 conversation_history = []
 debug_mode = False  # Will be set based on command-line arguments
+personas = {}  # Dictionary to store loaded personas
+activation_phrases_set = set()  # Set of all activation phrases to avoid duplicates
+
+active_persona = None  # Currently active persona
+last_interaction_time = None  # Timestamp of the last interaction
+CONVERSATION_TIMEOUT = timedelta(minutes=5)  # Adjust the timeout as needed
+
+assistant_responses = []  # List to store recent assistant responses
+
+LOCK_FILE = '/tmp/tx_rx_lock'
+
+def create_lock():
+    """Create a lock file to signal the receiver to pause."""
+    with open(LOCK_FILE, 'w') as f:
+        f.write('locked')
+
+def remove_lock():
+    """Remove the lock file to signal the receiver to resume."""
+    if os.path.exists(LOCK_FILE):
+        os.remove(LOCK_FILE)
 
 # Register Signal Handlers
 register_signal_handlers(terminate_flag)
@@ -105,11 +125,47 @@ def load_new_transcriptions():
         return []
 
 def should_respond(transcription):
-    """Check if the transcription addresses the dispatcher."""
+    """Determine if the assistant should respond and which persona should respond."""
+    global active_persona, last_interaction_time
     transcription_lower = transcription.lower()
-    if 'dispatch alpha' in transcription_lower or 'dispatch, alpha' in transcription_lower:
-        return True
-    return False
+
+    # Check if the transcription is from the assistant itself
+    for response in assistant_responses:
+        if transcription.strip() == response.strip():
+            logger.info("Ignoring transcription as it matches an assistant's previous response.")
+            return None
+
+    # Check for activation phrases
+    for persona_name, persona_data in personas.items():
+        for phrase in persona_data['activation_phrases']:
+            if phrase.lower() in transcription_lower:
+                active_persona = persona_name
+                last_interaction_time = datetime.now()
+                logger.info(f"Activation phrase detected. Active persona set to '{active_persona}'.")
+                return active_persona
+    # Check if there's an active persona and if the conversation hasn't timed out
+    if active_persona:
+        if datetime.now() - last_interaction_time <= CONVERSATION_TIMEOUT:
+            last_interaction_time = datetime.now()
+            return active_persona
+        else:
+            logger.info("Conversation timed out. No active persona.")
+            active_persona = None
+    # If no active persona, handle default activation
+    if not active_persona:
+        if len(personas) == 1:
+            # Only one persona is loaded, activate it
+            active_persona = next(iter(personas))
+            last_interaction_time = datetime.now()
+            logger.info(f"No activation phrase detected. Defaulting to the only loaded persona '{active_persona}'.")
+            return active_persona
+        elif len(personas) > 1:
+            # Multiple personas are loaded, choose one at random
+            active_persona = random.choice(list(personas.keys()))
+            last_interaction_time = datetime.now()
+            logger.info(f"No activation phrase detected. Randomly selected persona '{active_persona}'.")
+            return active_persona
+    return None
 
 def update_conversation_history(timestamp, transcription):
     """Update the conversation history, expiring old messages."""
@@ -127,8 +183,46 @@ def update_conversation_history(timestamp, transcription):
 def get_military_time():
     return datetime.now().strftime('%H:%M')
 
+def load_persona(persona_name):
+    """Load the persona data from the personas directory."""
+    personas_dir = os.path.join(os.path.dirname(__file__), 'personas')
+    persona_file = os.path.join(personas_dir, f"{persona_name}.json")
+
+    if not os.path.exists(persona_file):
+        logger.error(f"Persona file '{persona_file}' does not exist.")
+        sys.exit(1)
+
+    try:
+        with open(persona_file, 'r') as f:
+            persona_data = json.load(f)
+        prompt = persona_data.get('prompt', '')
+        voice = persona_data.get('voice', VOICE_NAME)
+        activation_phrases = persona_data.get('activation_phrases', [])
+        if not activation_phrases:
+            logger.warning(f"No activation phrases found for persona '{persona_name}'.")
+        # Check for duplicate activation phrases
+        for phrase in activation_phrases:
+            if phrase.lower() in activation_phrases_set:
+                logger.error(f"Duplicate activation phrase '{phrase}' found in persona '{persona_name}'.")
+                sys.exit(1)
+            activation_phrases_set.add(phrase.lower())
+        return {'prompt': prompt, 'voice': voice, 'activation_phrases': activation_phrases}
+    except Exception as e:
+        logger.error(f"Error loading persona '{persona_name}': {e}")
+        sys.exit(1)
+
+def load_all_personas():
+    """Load all personas from the personas directory."""
+    personas_dir = os.path.join(os.path.dirname(__file__), 'personas')
+    persona_files = [f for f in os.listdir(personas_dir) if f.endswith('.json')]
+    for persona_file in persona_files:
+        persona_name = os.path.splitext(persona_file)[0]
+        persona_data = load_persona(persona_name)
+        personas[persona_name] = persona_data
+
 def generate_response():
-    """Generate responses to transcriptions that address the dispatcher."""
+    """Generate responses to transcriptions that address any loaded persona."""
+    global assistant_responses  # Declare as global
     processed_files = load_processed_files()
     while not terminate_flag.is_set():
         new_transcriptions = load_new_transcriptions()
@@ -137,20 +231,15 @@ def generate_response():
             filepath = os.path.join(TRANSCRIPTIONS_DIR, filename)
             logger.info(f"New transcription: {transcription[:60]} ...")
 
-            if should_respond(transcription):
-                logger.info("Transcription addresses the dispatcher. Generating response.")
+            responding_persona = should_respond(transcription)
+            if responding_persona:
+                logger.info(f"Transcription will be handled by persona '{responding_persona}'.")
+                persona_data = personas[responding_persona]
                 # Update conversation history
                 update_conversation_history(timestamp, transcription)
                 # Prepare messages for ChatGPT API
                 military_time = get_military_time()
-                prompt = f"""
-You are Dispatch Alpha, a professional radio dispatcher. But never say Alpha, only Dispatch.
-The current military time is {military_time}.
-Your job is to communicate with other radio operators using formal and proper radio etiquette.
-Ensure all responses are concise, clear, and use common radio phrases such as "Copy" and "Over."
-You must always close your transmission with the current military time by saying,
-"Dispatch out, {military_time}."
-"""
+                prompt = persona_data['prompt'].format(military_time=military_time)
 
                 # Use the prompt in the messages list
                 messages = [
@@ -176,15 +265,22 @@ You must always close your transmission with the current military time by saying
                     response_text = completion.choices[0].message.content.strip()
                     logger.info(f"Generated response: {response_text[:60]} ...")
                     # Add assistant's response to conversation history
-                    conversation_history.append({'timestamp': datetime.now(tz=timestamp.tzinfo), 'role': 'assistant', 'content': response_text})
-                    # Enqueue the response for transmission
-                    response_queue.put(response_text)
+                    conversation_history.append({
+                        'timestamp': datetime.now(tz=timestamp.tzinfo),
+                        'role': 'assistant',
+                        'content': response_text
+                    })
+                    # Store the assistant's response to prevent self-response
+                    assistant_responses.append(response_text)
+                    # Limit the assistant_responses list to recent items
+                    if len(assistant_responses) > 10:
+                        assistant_responses = assistant_responses[-10:]
+                    # Enqueue the response for transmission, include persona voice
+                    response_queue.put({'text': response_text, 'voice': persona_data['voice']})
                 except Exception as e:
                     logger.error(f"Error generating response: {e}")
             else:
-                logger.info("Transcription does not address the dispatcher. Ignoring.")
-                # Optionally, still update conversation history without assistant response
-                update_conversation_history(timestamp, transcription)
+                logger.info("No active persona to respond or message ignored. Ignoring transcription.")
             try:
                 processed_filepath = os.path.join(PROCESSED_TRANSCRIPTIONS_DIR, filename)
                 shutil.move(filepath, processed_filepath)
@@ -195,14 +291,14 @@ You must always close your transmission with the current military time by saying
         # Sleep briefly before checking for new transcriptions
         time.sleep(1)
 
-def text_to_speech(text):
+def text_to_speech(text, voice):
     """Convert text to speech audio data using OpenAI's TTS model, requesting WAV format."""
     try:
         temp_audio_file = 'temp_response.wav'
 
         response = client.audio.speech.create(
             model="tts-1",
-            voice=VOICE_NAME,
+            voice=voice,
             input=text,
             response_format="wav"  # Request WAV format
         )
@@ -225,13 +321,13 @@ def play_audio(audio_file):
     """Play audio file using aplay with the specified device."""
     try:
         logger.info(f"Playing audio file: {audio_file} on device: {AUDIO_DEVICE}")
-        #subprocess.run(['aplay', '-D', AUDIO_DEVICE, audio_file], check=True)
+        create_lock()  # Signal the receiver to pause
         subprocess.run(['aplay', '-D', AUDIO_DEVICE, audio_file], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
         logger.info("Audio playback completed.")
     except subprocess.CalledProcessError as e:
         logger.error(f"Error playing audio: {e}")
     finally:
+        remove_lock()  # Signal the receiver to resume
         if not debug_mode and os.path.exists(audio_file):
             os.remove(audio_file)
             logger.info(f"Removed temporary audio file: {audio_file}")
@@ -240,10 +336,12 @@ def transmit_responses():
     """Transmit responses from the response queue."""
     while not terminate_flag.is_set():
         try:
-            response_text = response_queue.get(timeout=1)
-            if response_text:
+            response_item = response_queue.get(timeout=1)
+            if response_item:
+                response_text = response_item['text']
+                voice = response_item['voice']
                 logger.debug(f"Transmitting response: {response_text}")
-                audio_file = text_to_speech(response_text)
+                audio_file = text_to_speech(response_text, voice)
                 if audio_file:
                     play_audio(audio_file)
                 else:
@@ -260,6 +358,8 @@ def main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Dispatcher AI transmitter script.')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode to save TTS audio files.')
+    parser.add_argument('--persona', type=str, action='append', help='Specify the persona(s) to use.')
+    parser.add_argument('--load-all-personas', action='store_true', help='Load all available personas.')
     args = parser.parse_args()
 
     debug_mode = args.debug
@@ -267,8 +367,30 @@ def main():
     if debug_mode:
         logger.info("Debug mode is enabled. TTS audio responses will be saved.")
 
+    # Load personas
+    if args.load_all_personas:
+        logger.info("Loading all available personas.")
+        load_all_personas()
+    elif args.persona:
+        for persona_name in args.persona:
+            logger.info(f"Loading persona '{persona_name}'.")
+            persona_data = load_persona(persona_name)
+            personas[persona_name] = persona_data
+    else:
+        logger.error("No personas specified. Use '--persona' or '--load-all-personas'.")
+        sys.exit(1)
+
+    if not personas:
+        logger.error("No personas loaded. Exiting.")
+        sys.exit(1)
+
+    if os.path.exists(LOCK_FILE):
+        os.remove(LOCK_FILE)
+        logger.info("Removed stale lock file on startup.")
+
     # Print startup message
-    logger.info("Dispatcher AI transmitter script started in VOX mode. Ready to process transcriptions.")
+    loaded_personas = ', '.join(personas.keys())
+    logger.info(f"Dispatch Alpha transmitter script started with personas: {loaded_personas}. Ready to process transcriptions.")
 
     # Start threads for generating responses and transmitting
     generator_thread = threading.Thread(target=generate_response)
@@ -290,4 +412,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
