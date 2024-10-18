@@ -62,6 +62,9 @@ client = OpenAI(api_key=API_KEY)  # Instantiate the OpenAI client
 audio_queue = queue.Queue(maxsize=QUEUE_MAX_SIZE)
 terminate_flag = threading.Event()
 
+# Lock file path for coordination with transmitter
+LOCK_FILE = '/tmp/tx_rx_lock'
+
 def test_audio_input():
     """Test audio input by recording for a short duration and measuring RMS."""
     duration = 2  # seconds
@@ -171,6 +174,21 @@ def audio_callback(indata, frames, time_info, status):
     if status:
         logger.warning(f"Audio Stream Status: {status}")
 
+    # Check if the transmitter is transmitting (lock file exists)
+    if os.path.exists(LOCK_FILE):
+        # If we are currently recording, we need to reset the state
+        if hasattr(audio_callback, "initialized") and audio_callback.initialized:
+            if audio_callback.recording:
+                logger.info("Transmitter is active. Resetting recording state.")
+                audio_callback.recording = False
+                audio_callback.audio_frames = []
+                audio_callback.pre_roll_buffer = []
+                audio_callback.post_roll_counter = 0.0
+                audio_callback.silence_counter = 0.0
+                audio_callback.recording_duration = 0.0
+        # Skip processing
+        return
+
     rms = np.sqrt(np.mean(np.square(indata)))
 
     # Initialize stateful variables on first call
@@ -245,6 +263,10 @@ def main():
     args = parser.parse_args()
 
     debug_mode = args.debug
+
+    if os.path.exists(LOCK_FILE):
+        os.remove(LOCK_FILE)
+        logger.info("Removed stale lock file on startup.")
 
     # Test audio input before starting
     test_audio_input()
