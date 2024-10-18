@@ -2,3 +2,6 @@ numpy
 sounddevice
 soundfile
 openai
+scipy
+wavfile
+pydub
