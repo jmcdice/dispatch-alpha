@@ -327,6 +327,7 @@ def play_audio(audio_file):
     except subprocess.CalledProcessError as e:
         logger.error(f"Error playing audio: {e}")
     finally:
+        time.sleep(2)
         remove_lock()  # Signal the receiver to resume
         if not debug_mode and os.path.exists(audio_file):
             os.remove(audio_file)
