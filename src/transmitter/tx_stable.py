@@ -196,7 +196,8 @@ def get_military_time():
 
 def load_persona(persona_name):
     """Load the persona data from the personas directory."""
-    personas_dir = os.path.join(os.path.dirname(__file__), 'personas')
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+    personas_dir = os.path.join(project_root, 'personas')
     persona_file = os.path.join(personas_dir, f"{persona_name}.json")
 
     if not os.path.exists(persona_file):
@@ -224,8 +225,11 @@ def load_persona(persona_name):
 
 def load_all_personas():
     """Load all personas from the personas directory."""
-    personas_dir = os.path.join(os.path.dirname(__file__), 'personas')
+    # Navigate up two directories to reach the project root
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+    personas_dir = os.path.join(project_root, 'personas')
     persona_files = [f for f in os.listdir(personas_dir) if f.endswith('.json')]
+
     for persona_file in persona_files:
         persona_name = os.path.splitext(persona_file)[0]
         persona_data = load_persona(persona_name)
