@@ -35,10 +35,11 @@ LOG_FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
 ## Additional configurations for tx_stable.py
 
 # Audio Configuration for Transmitter
+# Audio Configuration for Transmitter
 TX_SAMPLE_RATE = 24000  # Adjust as needed
 TX_CHANNELS = 1
-TX_AUDIO_DEVICE_INDEX = 1  # Onboard headphone jack
-AUDIO_DEVICE = "plughw:1,0"  # ALSA name for the onboard headphone jack
+TX_AUDIO_DEVICE_INDEX = 2  # USB sound card index
+AUDIO_DEVICE = "plughw:2,0"  # ALSA name for the USB sound card
 
 # File Paths
 PROCESSED_FILES_JSON = 'data/processed_files.json'
