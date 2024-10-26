@@ -6,6 +6,7 @@ from datetime import timedelta
 
 # OpenAI API Key
 API_KEY = os.getenv('OPENAI_API_KEY')
+UNREALSPEECH_API_KEY = os.getenv('UNREALSPEECH_API_KEY')
 
 # Audio Configuration
 SAMPLE_RATE = 44100  # 44.1kHz
@@ -64,3 +65,32 @@ TX_LOG_FILE = 'logs/dispatch_ai_tx.log'
 # Other Configurations
 TRANSCRIPTIONS_DIR = 'data/transcriptions'
 TRANSCRIPTIONS_LOG_FILE = 'logs/transcriptions.log'
+
+# config/settings.py
+
+# Add this to specify the TTS provider ('openai' or 'unrealspeech')
+#TTS_PROVIDER = 'openai'  # or 'unrealspeech'
+TTS_PROVIDER = 'unrealspeech'  # or 'unrealspeech'
+
+# Default voice name for each provider
+DEFAULT_VOICE = {
+    'openai': 'nova',
+    'unrealspeech': 'Scarlett'
+}
+
+# Voice mapping per provider (abstract voice names mapped to provider-specific voice IDs)
+VOICE_MAPPING = {
+    'openai': {
+        'default': 'David',
+        'female_1': 'Jane',
+        'male_1': 'John',
+        # Add more mappings as needed
+    },
+    'unrealspeech': {
+        'default': 'Dan',
+        'female_1': 'Scarlett',
+        'male_1': 'Dan',
+        # Add more mappings as needed
+    }
+}
+

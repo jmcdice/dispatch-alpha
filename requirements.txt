@@ -5,3 +5,4 @@ openai
 scipy
 wavfile
 pydub
+requests

@@ -13,7 +13,8 @@ import queue
 import argparse
 import warnings
 import subprocess
-import random  # Added for random persona selection
+import random
+import requests
 
 # Ignore DeprecationWarning
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -38,7 +39,11 @@ from config.settings import (
     LOG_FORMAT,
     TRANSCRIPTIONS_DIR,
     PROCESSED_TRANSCRIPTIONS_DIR,
-    TRANSCRIPTIONS_LOG_FILE
+    TRANSCRIPTIONS_LOG_FILE,
+    TTS_PROVIDER,
+    UNREALSPEECH_API_KEY,
+    DEFAULT_VOICE,
+    VOICE_MAPPING
 )
 from src.common.utils import initialize_logging, register_signal_handlers
 
@@ -208,8 +213,9 @@ def load_persona(persona_name):
         with open(persona_file, 'r') as f:
             persona_data = json.load(f)
         prompt = persona_data.get('prompt', '')
-        voice = persona_data.get('voice', VOICE_NAME)
+        voices = persona_data.get('voices', {})
         activation_phrases = persona_data.get('activation_phrases', [])
+
         if not activation_phrases:
             logger.warning(f"No activation phrases found for persona '{persona_name}'.")
         # Check for duplicate activation phrases
@@ -218,7 +224,7 @@ def load_persona(persona_name):
                 logger.error(f"Duplicate activation phrase '{phrase}' found in persona '{persona_name}'.")
                 sys.exit(1)
             activation_phrases_set.add(phrase.lower())
-        return {'prompt': prompt, 'voice': voice, 'activation_phrases': activation_phrases}
+        return {'prompt': prompt, 'voices': voices, 'activation_phrases': activation_phrases}
     except Exception as e:
         logger.error(f"Error loading persona '{persona_name}': {e}")
         sys.exit(1)
@@ -246,11 +252,13 @@ def generate_response():
             filepath = os.path.join(TRANSCRIPTIONS_DIR, filename)
             logger.info(f"New transcription: {transcription[:60]} ...")
 
-
             responding_persona = should_respond(transcription)
             if responding_persona:
                 logger.info(f"Transcription will be handled by persona '{responding_persona}'.")
                 persona_data = personas[responding_persona]
+                # Get the provider-specific voice ID
+                voice = persona_data.get('voices', {}).get(TTS_PROVIDER, DEFAULT_VOICE.get(TTS_PROVIDER))
+
                 # Update conversation history
                 update_conversation_history(timestamp, transcription)
                 # Prepare messages for ChatGPT API
@@ -292,8 +300,10 @@ def generate_response():
                     # Limit the assistant_responses list to recent items
                     if len(assistant_responses) > 10:
                         assistant_responses = assistant_responses[-10:]
-                    # Enqueue the response for transmission, include persona voice
-                    response_queue.put({'text': response_text, 'voice': persona_data['voice']})
+
+                    # Enqueue the response for transmission, include voice
+                    response_queue.put({'text': response_text, 'voice': voice})
+
                 except Exception as e:
                     logger.error(f"Error generating response: {e}")
             else:
@@ -309,17 +319,58 @@ def generate_response():
         time.sleep(1)
 
 def text_to_speech(text, voice):
-    """Convert text to speech audio data using OpenAI's TTS model, requesting WAV format."""
+    """Convert text to speech audio data using the configured TTS provider."""
     try:
         temp_audio_file = 'temp_response.wav'
 
-        response = client.audio.speech.create(
-            model="tts-1",
-            voice=voice,
-            input=text,
-            response_format="wav"  # Request WAV format
-        )
-        response.stream_to_file(temp_audio_file)
+        # Map the abstract voice name to provider-specific voice ID
+        provider_voice = voice  # 'voice' is already the provider-specific voice ID
+
+        if TTS_PROVIDER == 'openai':
+            # Use OpenAI TTS API
+            response = client.audio.speech.create(
+                model="tts-1",
+                voice=provider_voice,
+                input=text,
+                response_format="wav"  # Request WAV format
+            )
+            response.stream_to_file(temp_audio_file)
+
+        elif TTS_PROVIDER == 'unrealspeech':
+            # Use UnrealSpeech TTS API
+            if not UNREALSPEECH_API_KEY:
+                logger.error("UnrealSpeech API key is not set. Please set it in config/settings.py.")
+                return None
+
+            url = 'https://api.v7.unrealspeech.com/stream'
+            headers = {
+                'Authorization': f'Bearer {UNREALSPEECH_API_KEY}'
+            }
+            data = {
+                'Text': text,
+                'VoiceId': provider_voice,
+                'Bitrate': '192k',
+                'Speed': '0',
+                'Pitch': '1',
+                'Codec': 'libmp3lame'  # Receive MP3 format
+            }
+            response = requests.post(url, headers=headers, json=data)
+            if response.status_code == 200:
+                temp_mp3_file = 'temp_response.mp3'
+                # Save the content to temp_mp3_file
+                with open(temp_mp3_file, 'wb') as f:
+                    f.write(response.content)
+                # Convert MP3 to WAV using ffmpeg
+                command = ['ffmpeg', '-y', '-i', temp_mp3_file, temp_audio_file]
+                subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                # Remove the temp MP3 file
+                os.remove(temp_mp3_file)
+            else:
+                logger.error(f"UnrealSpeech API request failed with status code {response.status_code}: {response.text}")
+                return None
+        else:
+            logger.error(f"Unknown TTS provider: {TTS_PROVIDER}")
+            return None
 
         if debug_mode:
             os.makedirs(TTS_AUDIO_DIR, exist_ok=True)
@@ -335,11 +386,24 @@ def text_to_speech(text, voice):
         return None
 
 def play_audio(audio_file):
-    """Play audio file using aplay with the specified device."""
+    """Play audio file using the appropriate player."""
     try:
         logger.info(f"Playing audio file: {audio_file} on device: {AUDIO_DEVICE}")
         create_lock()  # Signal the receiver to pause
-        subprocess.run(['aplay', '-D', AUDIO_DEVICE, audio_file], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        # Determine the file extension
+        _, ext = os.path.splitext(audio_file)
+        ext = ext.lower()
+
+        if ext == '.wav':
+            player = ['aplay', '-D', AUDIO_DEVICE, audio_file]
+        elif ext == '.mp3':
+            player = ['mpg123', '-a', AUDIO_DEVICE, audio_file]
+        else:
+            logger.error(f"Unsupported audio format: {ext}")
+            return
+
+        subprocess.run(player, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         logger.info("Audio playback completed.")
     except subprocess.CalledProcessError as e:
         logger.error(f"Error playing audio: {e}")
