@@ -7,6 +7,8 @@ from datetime import timedelta
 # OpenAI API Key
 API_KEY = os.getenv('OPENAI_API_KEY')
 UNREALSPEECH_API_KEY = os.getenv('UNREALSPEECH_API_KEY')
+WEATHER_API_KEY = os.getenv('WEATHER_API_KEY')
+
 
 # Audio Configuration
 SAMPLE_RATE = 44100  # 44.1kHz

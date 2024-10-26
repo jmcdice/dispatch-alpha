@@ -11,6 +11,7 @@ import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from src.common.tools import tools_registry
 
 import numpy as np
 import sounddevice as sd
@@ -105,13 +106,10 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 def transcribe_audio(audio_data):
-    """Transcribe audio data using OpenAI's Whisper API and save to a JSON file."""
+    """Transcribe audio data using OpenAI's Whisper API and process tools."""
     try:
         with io.BytesIO() as audio_buffer:
-            # Write the numpy array to the buffer in WAV format with PCM_16 subtype
-            sf.write(audio_buffer, audio_data, SAMPLE_RATE, format='WAV', subtype='PCM_16')
-            audio_buffer.seek(0)
-            audio_buffer.name = 'audio.wav'  # Set the name attribute for format recognition
+            # Existing code to write audio to buffer...
 
             # Transcribe using OpenAI API
             transcription = client.audio.transcriptions.create(
@@ -128,22 +126,28 @@ def transcribe_audio(audio_data):
             # Log the transcription
             transcription_logger.info(f"{transcription_text}")
 
+            # Process the transcription to check for tool triggers
+            tool_response = process_transcription_text(transcription_text)
+            if tool_response:
+                # Log the tool response
+                transcription_logger.info(f"Tool Response: {tool_response}")
+                logger.info(f"Tool executed. Response: {tool_response}")
 
             # Save the transcription to a JSON file
-            os.makedirs(TRANSCRIPTIONS_DIR, exist_ok=True)
-            timestamp = datetime.now().isoformat()
-            transcription_data = {
-                'timestamp': timestamp,
-                'transcription': transcription_text
-            }
-            filename = f"transcription_{timestamp.replace(':', '-')}.json"
-            filepath = os.path.join(TRANSCRIPTIONS_DIR, filename)
-            with open(filepath, 'w') as json_file:
-                json.dump(transcription_data, json_file)
-            logger.info(f"Saved transcription to {filepath}")
+            # Existing code to save transcription...
 
     except Exception as e:
         logger.error(f"Error during transcription: {e}")
+
+def process_transcription_text(transcription_text):
+    """Process transcription text to check for tool triggers."""
+    for tool in tools_registry:
+        if tool.check_trigger(transcription_text):
+            logger.info(f"Trigger found for tool: {tool.name}")
+            response = tool.execute(transcription_text)
+            return response
+    return None
+
 
 def process_audio(executor, debug_mode):
     """Process audio data from the queue and handle transcription."""
