@@ -134,7 +134,8 @@ def load_new_transcriptions():
                     data = json.load(f)
                     timestamp = datetime.fromisoformat(data['timestamp'])
                     transcription = data['transcription']
-                    new_transcriptions.append((timestamp, transcription, filename))
+                    tool_response = data.get('tool_response')  # Get tool_response if it exists
+                    new_transcriptions.append((timestamp, transcription, tool_response, filename))
         return new_transcriptions
     except Exception as e:
         logger.error(f"Error loading transcriptions: {e}")
@@ -183,11 +184,15 @@ def should_respond(transcription):
             return active_persona
     return None
 
-def update_conversation_history(timestamp, transcription):
+def update_conversation_history(timestamp, transcription, tool_response=None):
     """Update the conversation history, expiring old messages."""
     global conversation_history
-    # Add the new message
+    # Add the user's message
     conversation_history.append({'timestamp': timestamp, 'role': 'user', 'content': transcription})
+    # If there's a tool response, add it as an assistant's message
+    if tool_response:
+        conversation_history.append({'timestamp': timestamp, 'role': 'assistant', 'content': tool_response})
+
     # Remove messages older than CONTEXT_EXPIRATION
     now = datetime.now(tz=timestamp.tzinfo)
     cutoff_time = now - CONTEXT_EXPIRATION
@@ -244,11 +249,10 @@ def load_all_personas():
 def generate_response():
     """Generate responses to transcriptions that address any loaded persona."""
     global assistant_responses  # Declare as global
-    processed_files = load_processed_files()
     while not terminate_flag.is_set():
         new_transcriptions = load_new_transcriptions()
 
-        for timestamp, transcription, filename in new_transcriptions:
+        for timestamp, transcription, tool_response, filename in new_transcriptions:
             filepath = os.path.join(TRANSCRIPTIONS_DIR, filename)
             logger.info(f"New transcription: {transcription[:60]} ...")
 
@@ -260,7 +264,7 @@ def generate_response():
                 voice = persona_data.get('voices', {}).get(TTS_PROVIDER, DEFAULT_VOICE.get(TTS_PROVIDER))
 
                 # Update conversation history
-                update_conversation_history(timestamp, transcription)
+                update_conversation_history(timestamp, transcription, tool_response)
                 # Prepare messages for ChatGPT API
                 military_time = get_military_time()
                 prompt = persona_data['prompt'].format(military_time=military_time)
