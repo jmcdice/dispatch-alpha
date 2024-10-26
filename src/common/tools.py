@@ -25,7 +25,7 @@ def get_weather(text):
     if match:
         location = match.group(1).strip()
     else:
-        location = 'your location'  # Default location or handle appropriately
+        location = 'Boulder, colorado'  # Default location or handle appropriately
 
     # Call the weather API
     if not WEATHER_API_KEY:

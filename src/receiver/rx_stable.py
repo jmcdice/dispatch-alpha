@@ -109,7 +109,10 @@ def transcribe_audio(audio_data):
     """Transcribe audio data using OpenAI's Whisper API and process tools."""
     try:
         with io.BytesIO() as audio_buffer:
-            # Existing code to write audio to buffer...
+            # Write the numpy array to the buffer in WAV format with PCM_16 subtype
+            sf.write(audio_buffer, audio_data, SAMPLE_RATE, format='WAV', subtype='PCM_16')
+            audio_buffer.seek(0)
+            audio_buffer.name = 'audio.wav'  # Set the name attribute for format recognition
 
             # Transcribe using OpenAI API
             transcription = client.audio.transcriptions.create(
@@ -134,7 +137,17 @@ def transcribe_audio(audio_data):
                 logger.info(f"Tool executed. Response: {tool_response}")
 
             # Save the transcription to a JSON file
-            # Existing code to save transcription...
+            os.makedirs(TRANSCRIPTIONS_DIR, exist_ok=True)
+            timestamp = datetime.now().isoformat()
+            transcription_data = {
+                'timestamp': timestamp,
+                'transcription': transcription_text
+            }
+            filename = f"transcription_{timestamp.replace(':', '-')}.json"
+            filepath = os.path.join(TRANSCRIPTIONS_DIR, filename)
+            with open(filepath, 'w') as json_file:
+                json.dump(transcription_data, json_file)
+            logger.info(f"Saved transcription to {filepath}")
 
     except Exception as e:
         logger.error(f"Error during transcription: {e}")
